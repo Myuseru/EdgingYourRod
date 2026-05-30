@@ -1,0 +1,6 @@
+{
+  "config.delay.name": "保持蓄力时间（秒）",
+  "config.delay.desc": "蓄力达到最大值时，保持最大状态多少秒后再下降。",
+  "config.infinite.name": "无限蓄力（消耗体力）",
+  "config.infinite.desc": "开启后，可无限保持最大蓄力，但每秒扣除10%最大体力值。"
+}

@@ -1,0 +1,9 @@
+{
+  "Name": "Edging Your Rod",
+  "Author": "kokinmanyou",
+  "Version": "1.0.0",
+  "Description": "当钓鱼蓄力达到最大值时延迟下降，或开启体力消耗型无限蓄力。",
+  "UniqueID": "kokinmanyou.EdgingYourRod",
+  "EntryDll": "EdgingYourRod.dll",
+  "MinimumApiVersion": "4.0.0"
+}

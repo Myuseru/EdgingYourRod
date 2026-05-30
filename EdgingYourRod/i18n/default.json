@@ -1,0 +1,6 @@
+{
+  "config.delay.name": "Delay Duration (Seconds)",
+  "config.delay.desc": "How many seconds the casting bar stays at MAX power before dropping.",
+  "config.infinite.name": "Infinite Hold (Stamina Cost)",
+  "config.infinite.desc": "If enabled, you can hold MAX power infinitely at the cost of 10% max stamina per second. This disables the timed delay over it."
+}
