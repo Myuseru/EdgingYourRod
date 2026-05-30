@@ -1,4 +1,6 @@
 ﻿using System;
+using HarmonyLib;
+using Microsoft.Xna.Framework;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
 using StardewValley;
@@ -8,16 +10,23 @@ namespace EdgingYourRod
 {
     public class ModEntry : Mod
     {
-        private ModConfig Config;
-        private DateTime? _maxPowerReachedTime = null;
-        private bool _wasMaxPower = false;
-        private int _staminaDrainedSeconds = 0;
+        private static ModConfig Config;
+        private static DateTime? _maxPowerReachedTime = null;
+        private static bool _wasMaxPower = false;
+
+        private static float _originalTimerSpeed = -0.001f;
 
         public override void Entry(IModHelper helper)
         {
-            this.Config = helper.ReadConfig<ModConfig>();
+            Config = helper.ReadConfig<ModConfig>();
             helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
-            helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
+
+            var harmony = new Harmony(this.ModManifest.UniqueID);
+
+            harmony.Patch(
+                original: AccessTools.Method(typeof(FishingRod), nameof(FishingRod.tickUpdate)),
+                prefix: new HarmonyMethod(typeof(ModEntry), nameof(Prefix_FishingRodTickUpdate))
+            );
         }
 
         private void OnGameLaunched(object sender, GameLaunchedEventArgs e)
@@ -27,14 +36,14 @@ namespace EdgingYourRod
 
             configMenu.Register(
                 mod: this.ModManifest,
-                reset: () => this.Config = new ModConfig(),
-                save: () => this.Helper.WriteConfig(this.Config)
+                reset: () => Config = new ModConfig(),
+                save: () => this.Helper.WriteConfig(Config)
             );
 
             configMenu.AddNumberOption(
                 mod: this.ModManifest,
-                getValue: () => this.Config.DelaySeconds,
-                setValue: value => this.Config.DelaySeconds = value,
+                getValue: () => Config.DelaySeconds,
+                setValue: value => Config.DelaySeconds = value,
                 name: () => this.Helper.Translation.Get("config.delay.name"),
                 tooltip: () => this.Helper.Translation.Get("config.delay.desc"),
                 min: 1
@@ -42,70 +51,71 @@ namespace EdgingYourRod
 
             configMenu.AddBoolOption(
                 mod: this.ModManifest,
-                getValue: () => this.Config.InfiniteHoldWithStamina,
-                setValue: value => this.Config.InfiniteHoldWithStamina = value,
+                getValue: () => Config.InfiniteHoldWithStamina,
+                setValue: value => Config.InfiniteHoldWithStamina = value,
                 name: () => this.Helper.Translation.Get("config.infinite.name"),
                 tooltip: () => this.Helper.Translation.Get("config.infinite.desc")
             );
         }
 
-        private void OnUpdateTicked(object sender, UpdateTickedEventArgs e)
+        private static void Prefix_FishingRodTickUpdate(FishingRod __instance, Farmer who)
         {
-            if (!Context.IsWorldReady) return;
-
-            // 【这里修正了！】isTimingCast 代表玩家此时正按住按键、蓄力条正在波动的状态
-            if (Game1.player?.CurrentTool is FishingRod rod && rod.isTimingCast)
+            if (__instance.isTimingCast)
             {
-                // 当蓄力值接近或达到最大值 1.0 时
-                if (rod.castingPower >= 0.98f)
+                if (__instance.castingPower >= 0.99f && !_wasMaxPower)
                 {
-                    if (!_wasMaxPower)
+                    _wasMaxPower = true;
+                    _maxPowerReachedTime = DateTime.Now;
+
+                    float currentSpeed = __instance.castingTimerSpeed;
+                    _originalTimerSpeed = currentSpeed != 0f ? -Math.Abs(currentSpeed) : -0.001f;
+                }
+
+                if (_wasMaxPower)
+                {
+                    bool shouldLock = true;
+
+                    if (Config.InfiniteHoldWithStamina)
                     {
-                        _wasMaxPower = true;
-                        _maxPowerReachedTime = DateTime.Now;
-                        _staminaDrainedSeconds = 0;
-                    }
+                        float drainPerTick = (who.MaxStamina * 0.10f) / 60f;
 
-                    if (this.Config.InfiniteHoldWithStamina)
-                    {
-                        TimeSpan elapsed = DateTime.Now - _maxPowerReachedTime.Value;
-                        int currentElapsedSeconds = (int)elapsed.TotalSeconds;
+                        who.Stamina -= drainPerTick;
 
-                        if (currentElapsedSeconds > _staminaDrainedSeconds)
+                        if (who.Stamina <= 0)
                         {
-                            int secondsToDrain = currentElapsedSeconds - _staminaDrainedSeconds;
-                            float drainAmount = (Game1.player.MaxStamina * 0.10f) * secondsToDrain;
-
-                            Game1.player.Stamina = Math.Max(0, Game1.player.Stamina - drainAmount);
-                            _staminaDrainedSeconds = currentElapsedSeconds;
-                        }
-
-                        if (Game1.player.Stamina > 0)
-                        {
-                            rod.castingPower = 1.0f;
+                            who.Stamina = 0; 
+                            shouldLock = false;
                         }
                     }
                     else
                     {
                         TimeSpan elapsed = DateTime.Now - _maxPowerReachedTime.Value;
-                        if (elapsed.TotalSeconds < this.Config.DelaySeconds)
+                        if (elapsed.TotalSeconds >= Config.DelaySeconds)
                         {
-                            rod.castingPower = 1.0f;
+                            shouldLock = false;
                         }
                     }
-                }
-                else
-                {
-                    if (rod.castingPower < 0.95f)
+
+                    if (shouldLock)
+                    {
+                        __instance.castingPower = 1.0f;
+                        __instance.castingTimerSpeed = 0f;
+                    }
+                    else
                     {
                         _wasMaxPower = false;
+                        __instance.castingTimerSpeed = _originalTimerSpeed;
                     }
                 }
             }
             else
             {
                 _wasMaxPower = false;
-                _staminaDrainedSeconds = 0;
+
+                if (__instance.castingTimerSpeed == 0f)
+                {
+                    __instance.castingTimerSpeed = Math.Abs(_originalTimerSpeed);
+                }
             }
         }
     }
